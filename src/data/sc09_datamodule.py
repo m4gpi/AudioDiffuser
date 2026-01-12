@@ -14,9 +14,9 @@ class SC09Dataset(Dataset):
         self.filenames = []
         for path in paths:
             self.filenames += glob.glob(f'{path}/**/*.wav', recursive=True)
-        self.label_idx_dict = {'Zero': 0, 'One': 1, 'Two': 2, 
-                               'Three': 3, 'Four': 4, 'Five': 5, 
-                               'Six': 6, 'Seven': 7, 'Eight': 8, 'Nine': 9}
+        self.label_idx_dict = {'zero': 0, 'one': 1, 'two': 2, 
+                               'three': 3, 'four': 4, 'five': 5, 
+                               'six': 6, 'seven': 7, 'eight': 8, 'nine': 9}
             
     def __len__(self):
         return len(self.filenames)
@@ -25,7 +25,7 @@ class SC09Dataset(Dataset):
         audio_filename = self.filenames[idx]
 
         signal, _ = torchaudio.load(audio_filename)
-        class_name = audio_filename.split('/')[-1].split('_')[0]
+        class_name = audio_filename.split('/')[-2:][0]
         class_label = self.label_idx_dict[class_name]
         return {'audio': signal[0], 'label': class_label}
     
