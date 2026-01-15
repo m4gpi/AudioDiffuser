@@ -1,0 +1,7 @@
+_target_: src.data.fsd50k.FSD50KDataModule
+data_dir: /mnt/data0/shared/audio/fsd50k/
+batch_size: 1
+segment_len: 1.536
+sample_rate: 32000
+num_workers: 8
+pin_memory: False

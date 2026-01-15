@@ -4,6 +4,7 @@ import numpy as np
 import pathlib
 import torch
 import torchaudio
+import librosa
 import pandas as pd
 
 from pytorch_lightning import LightningDataModule
@@ -14,13 +15,12 @@ class FSD50K(torch.utils.data.Dataset):
     _METADATA_DIR: str = "FSD50K.ground_truth"
     _TRAIN_VAL_METADATA: str = "dev.csv"
     _TEST_METADATA: str = "eval.csv"
-    SAMPLE_RATE: int = 44_100
 
     def __init__(
         self,
         data_dir: str,
         sample_rate: int = 44_100,
-        segment_len: int = 3.072,
+        segment_len: int = 1.536,
         download: bool = False,
         test: bool | None = None,
     ) -> None:
@@ -30,11 +30,9 @@ class FSD50K(torch.utils.data.Dataset):
         self.sample_rate = sample_rate
         self.segment_len = segment_len
         self.metadata = self._build_metadata()
+        self.metadata["duration_seconds"] = self.metadata.file_path.map(lambda path: librosa.get_duration(path=path))
+        self.metadata = self.metadata[self.metadata["duration_seconds"] > self.segment_len]
         self.x = self.metadata.file_path.to_numpy()
-
-    @property
-    def num_frames_in_segment(self):
-        return int(self.segment_len * self.sample_rate)
 
     def __len__(self):
         return len(self.x)
@@ -43,9 +41,15 @@ class FSD50K(torch.utils.data.Dataset):
         file_path = self.x[idx]
         return self.load_sample(file_path)
 
+    @property
+    def samples_per_segment(self):
+        return int(self.sample_rate * self.segment_len)
+
     def load_sample(self, file_path: pathlib.Path):
-        wav, _ = torchaudio.load(file_path)
-        return wav
+        metadata = torchaudio.info(str(file_path))
+        num_frames = int(self.samples_per_segment / self.sample_rate * metadata.sample_rate)
+        waveform, _ = torchaudio.load(str(file_path), num_frames=num_frames)
+        return torchaudio.functional.resample(waveform, orig_freq=metadata.sample_rate, new_freq=self.sample_rate).squeeze()
 
     def _build_metadata(self):
         if self.test is None:
