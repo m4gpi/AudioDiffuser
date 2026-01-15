@@ -52,27 +52,27 @@ class FSD50K(torch.utils.data.Dataset):
         return torchaudio.functional.resample(waveform, orig_freq=metadata.sample_rate, new_freq=self.sample_rate).squeeze()
 
     def _build_metadata(self):
-        if self.test is None:
+        if self.test == True:
+            test_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TEST_METADATA)
+            test_df["file_path"] = self.data_dir / self._TEST_AUDIO_DIR / test_df["fname"].map(lambda fname: f"{fname}.wav")
+            return test_df
+        elif self.test == False:
+            train_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TRAIN_VAL_METADATA)
+            train_df["file_path"] = self.data_dir /  self._TRAIN_VAL_AUDIO_DIR / train_df["fname"].map(lambda fname: f"{fname}.wav")
+            return train_df
+        else:
             test_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TEST_METADATA)
             test_df["file_path"] = self.data_dir / self._TEST_AUDIO_DIR / test_df["fname"].map(lambda fname: f"{fname}.wav")
             train_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TRAIN_VAL_METADATA)
             train_df["file_path"] = self.data_dir /  self._TRAIN_VAL_AUDIO_DIR / train_df["fname"].map(lambda fname: f"{fname}.wav")
             return pd.concat([train_df, test_df], axis=0)
-        elif test:
-            test_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TEST_METADATA)
-            test_df["file_path"] = self.data_dir / self._TEST_AUDIO_DIR / test_df["fname"].map(lambda fname: f"{fname}.wav")
-            return test_df
-        else:
-            train_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TRAIN_VAL_METADATA)
-            train_df["file_path"] = self.data_dir /  self._TRAIN_VAL_AUDIO_DIR / train_df["fname"].map(lambda fname: f"{fname}.wav")
-            return train_df
 
 class FSD50KDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "./data/fsd50k",
-        sample_rate: int = 44100,
-        segment_len: int = 3.072,
+        sample_rate: int = 32000,
+        segment_len: int = 1.536,
         batch_size: int = 64,
         val_prop: float = 0.2,
         test_prop: float = 0.2,
@@ -85,29 +85,30 @@ class FSD50KDataModule(LightningDataModule):
         self.save_hyperparameters(logger=False)
         self.batch_size = batch_size
         self.stft_args = dict(n_fft=n_fft, hop_length=hop_length, center=True)
-        self.data: Dataset | None = None
-        self.train: Dataset | None = None
-        self.val: Dataset | None = None
-        self.test: Dataset | None = None
+        self.data: torch.utils.data.Dataset | None = None
+        self.train: torch.utils.data.Dataset | None = None
+        self.val: torch.utils.data.Dataset | None = None
+        self.test: torch.utils.data.Dataset | None = None
 
     def prepare_data(self):
-        FSD50K(data_dir=self.data_dir, download=True)
+        pass
+        # FSD50K(data_dir=self.hparams.data_dir, download=True)
 
     def setup(self, stage: Optional[str] = None):
         self.data = FSD50K(
-            data_dir=self.data_dir,
-            sample_rate=self.sample_rate,
-            segment_len=self.segment_len,
+            data_dir=self.hparams.data_dir,
+            sample_rate=self.hparams.sample_rate,
+            segment_len=self.hparams.segment_len,
         )
-        self.train, self.val, self.test = torch.utils.data.random_split(
-            self.data,
-            (1 - self.val_prop - self.test_prop, self.val_prop, self.test_prop),
-            generator=self.generator
-        )
+        # self.train, self.val, self.test = torch.utils.data.random_split(
+        #     self.data,
+        #     (1 - self.hparams.val_prop - self.hparams.test_prop, self.hparams.val_prop, self.hparams.test_prop),
+        #     generator=self.generator
+        # )
 
     def train_dataloader(self):
-        return DataLoader(
-            dataset=self.train,
+        return torch.utils.data.DataLoader(
+            dataset=self.data,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
@@ -116,7 +117,7 @@ class FSD50KDataModule(LightningDataModule):
         )
 
     def val_dataloader(self):
-        return DataLoader(
+        return torch.utils.data.DataLoader(
             dataset=self.val,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
@@ -125,7 +126,7 @@ class FSD50KDataModule(LightningDataModule):
         )
 
     def test_dataloader(self):
-        return DataLoader(
+        return torch.utils.data.DataLoader(
             dataset=self.test,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
