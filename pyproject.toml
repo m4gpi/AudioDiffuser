@@ -30,4 +30,5 @@ dependencies = [
     "torchsde>=0.2.6",
     "wandb>=0.23.1",
     "pandas>=2.3.3",
+    "librosa>=0.11.0",
 ]
