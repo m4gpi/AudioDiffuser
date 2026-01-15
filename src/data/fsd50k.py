@@ -47,8 +47,10 @@ class FSD50K(torch.utils.data.Dataset):
 
     def load_sample(self, file_path: pathlib.Path):
         metadata = torchaudio.info(str(file_path))
-        num_frames = int(self.samples_per_segment / self.sample_rate * metadata.sample_rate)
-        waveform, _ = torchaudio.load(str(file_path), num_frames=num_frames)
+        num_frames = int(metadata.sample_rate * self.segment_len)
+        max_offset = metadata.num_frames - num_frames
+        frame_offset = np.random.choice(np.arange(max_offset))
+        waveform, _ = torchaudio.load(str(file_path), frame_offset=frame_offset, num_frames=num_frames)
         return torchaudio.functional.resample(waveform, orig_freq=metadata.sample_rate, new_freq=self.sample_rate).squeeze()
 
     def _build_metadata(self):
@@ -66,6 +68,16 @@ class FSD50K(torch.utils.data.Dataset):
             train_df = pd.read_csv(self.data_dir / self._METADATA_DIR / self._TRAIN_VAL_METADATA)
             train_df["file_path"] = self.data_dir /  self._TRAIN_VAL_AUDIO_DIR / train_df["fname"].map(lambda fname: f"{fname}.wav")
             return pd.concat([train_df, test_df], axis=0)
+
+class FrameSampler(torch.utils.data.Sampler):
+    def __init__(self, data: torch.utils.data.Dataset) -> None:
+        duration_seconds = data.metadata["duration_seconds"].to_numpy()
+        self.num_samples = len(data)
+        self.weights = torch.tensor(duration_seconds / duration_seconds.sum())
+
+    def __iter__(self):
+        sampled_indices = torch.multinomial(self.weights, self.num_samples, replacement=True)
+        return iter(sampled_indices.tolist())
 
 class FSD50KDataModule(LightningDataModule):
     def __init__(
@@ -107,14 +119,15 @@ class FSD50KDataModule(LightningDataModule):
         # )
 
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(
+        dl = torch.utils.data.DataLoader(
             dataset=self.data,
-            batch_size=self.hparams.batch_size,
+            batch_size=6,
+            sampler=FrameSampler(data=self.data),
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=True,
-            drop_last=True,
         )
+        while True:
+            yield from dl
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(

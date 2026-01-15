@@ -105,7 +105,7 @@ class DiffUnetComplexModule(LightningModule):
         # predict noise
         audio = x.to(next(self.net.parameters()).dtype)
         audio_spec = torch.stft(audio, window=self.window.to(self.device), 
-                                normalized=True, return_complex=True, **self.stft_args)
+                                normalized=True, return_complex=True, **self.stft_args)[:, :, :-1] # FIXME
 
         # Convert real and imaginary parts of x into two channel dimensions
         audio_spec = spec_fwd(audio_spec, spec_abs_exponent=self.spec_abs_exponent, 
@@ -151,7 +151,7 @@ class DiffUnetComplexModule(LightningModule):
         # remember to always return loss from `training_step()` or backpropagation will fail!
 
         if self.use_ema:
-            batch_size = batch[list(batch.keys())[0]].shape[0]
+            batch_size = batch.shape[0]
             if int(self.cur_nitem) % self.num_ema_snapshot_item == 0 and self.trainer.global_rank == 0 and self.global_step > 0:
                 ema_list = self.ema_prof.get()
                 ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
