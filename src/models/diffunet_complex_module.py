@@ -38,7 +38,7 @@ class DiffUnetComplexModule(LightningModule):
         ema_ckpt_path: Optional[str] = None,
     ):
         super().__init__()
-        
+
         self.spec_abs_exponent = spec_abs_exponent
         self.spec_factor = spec_factor
         self.n_fft = n_fft
@@ -49,7 +49,7 @@ class DiffUnetComplexModule(LightningModule):
 
         self.optimizer = optimizer
         self.scheduler = scheduler
-        
+
         # diffusion components
         self.net = net
         self.use_ema = use_ema
@@ -65,17 +65,17 @@ class DiffUnetComplexModule(LightningModule):
         self.generated_frame_length = generated_frame_length
         self.generated_frequency = generated_frequency
         self.generated_sample_class = generated_sample_class
-        
+
         # generation
         self.total_test_samples = total_test_samples
         self.audio_sample_rate = audio_sample_rate
         self.norm_wav = norm_wav
-        
+
         # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
-        
+
         # for tracking best so far validation accuracy
         self.val_loss_best = MinMetric()
 
@@ -92,20 +92,18 @@ class DiffUnetComplexModule(LightningModule):
         complex_spec = spec_back(complex_spec,
                                  spec_abs_exponent=self.spec_abs_exponent, 
                                  spec_factor=self.spec_factor)
-        
+
         # convert to waveform
         audio_sample = torch.istft(complex_spec.squeeze(1), 
                                    window=self.window.to(self.device), 
                                    normalized=True, **self.stft_args)
         audio_sample = audio_sample.cpu()
-        
+
         return audio_sample
 
     def forward(self, x: torch.Tensor):
         # predict noise
-        
-        audio_classes = x['label'] # kwargs
-        audio = x['audio'].to(next(self.net.parameters()).dtype)
+        audio = x.to(next(self.net.parameters()).dtype)
         audio_spec = torch.stft(audio, window=self.window.to(self.device), 
                                 normalized=True, return_complex=True, **self.stft_args)
 
@@ -117,13 +115,12 @@ class DiffUnetComplexModule(LightningModule):
         # Sample amount of noise to add for each batch element
         sigmas = self.noise_distribution(num_samples=audio_spec.shape[0], 
                                          device=audio_spec.device)
-        
+
         # compute loss
         loss = self.diffusion(audio_spec, self.net, 
-                              classes=audio_classes, 
                               sigmas=sigmas)
         return loss.mean()
-    
+
     def on_fit_start(self):
 
         if self.use_ema and self.use_phema:
@@ -152,7 +149,7 @@ class DiffUnetComplexModule(LightningModule):
         # we can return here dict with any tensors
         # and then read it in some callback or in `training_epoch_end()` below
         # remember to always return loss from `training_step()` or backpropagation will fail!
-        
+
         if self.use_ema:
             batch_size = batch[list(batch.keys())[0]].shape[0]
             if int(self.cur_nitem) % self.num_ema_snapshot_item == 0 and self.trainer.global_rank == 0 and self.global_step > 0:
@@ -182,10 +179,10 @@ class DiffUnetComplexModule(LightningModule):
         # or using `on_train_epoch_end()` instead which doesn't accumulate outputs
 
         pass
-    
+
     @torch.no_grad()
     def validation_step(self, batch: Any, batch_idx: int):
-        
+
         loss = self.model_step(batch)
 
         # update and log metrics
@@ -193,7 +190,7 @@ class DiffUnetComplexModule(LightningModule):
         self.log("val/loss", self.val_loss, on_step=False, 
                  on_epoch=True, prog_bar=True, sync_dist=True)
         return {"loss": loss}
-    
+
     @torch.no_grad()
     def on_validation_epoch_end(self):
 
@@ -205,12 +202,12 @@ class DiffUnetComplexModule(LightningModule):
 
         with torch.no_grad():
             target_class = torch.from_numpy(np.random.choice(target_classes, 1).astype(int)).to(self.device)
-            
+
             # input data
             initial_noise = torch.randn((1, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
 
             audio_sample = self.synthesize_from_noise(initial_noise, target_class)
-        
+
         if self.trainer.is_global_zero:
             audio_save_dir = os.path.join(self.logger.save_dir, 'val_audio')
             os.makedirs(audio_save_dir, exist_ok=True)
@@ -242,18 +239,18 @@ class DiffUnetComplexModule(LightningModule):
                 self.net = pickle.load(f).to(self.dtype).to(self.device)
 
         print('Generating test samples....................')
-        
+
         os.makedirs(test_sample_folder, exist_ok=True)
-        
+
         with torch.no_grad():
-            
+
             for i in tqdm(range(iteration)):
 
                 if self.generated_sample_class > 1:
                     target_class = torch.from_numpy((np.arange(test_batch) % self.generated_sample_class).astype(int)).to(self.device)
                 else:
                     target_class = torch.from_numpy(0*np.ones(test_batch).astype(int)).to(self.device)
-                
+
                 # input data
                 initial_noise = torch.randn((test_batch, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
 
@@ -264,7 +261,7 @@ class DiffUnetComplexModule(LightningModule):
                     audio_path = os.path.join(test_sample_folder, audio_filename)
                     torchaudio.save(audio_path, audio_samples[j, :int(audio_dur*self.audio_sample_rate)].unsqueeze(0), 
                                     self.audio_sample_rate, bits_per_sample=16)
-                
+
     def configure_optimizers(self):
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
         Normally you'd need one. But in the case of GANs or similar you might have multiple.
