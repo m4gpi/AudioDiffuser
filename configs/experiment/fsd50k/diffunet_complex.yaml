@@ -4,82 +4,82 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: fsd50k
-  - override /model: diffunet_complex
-  - override /callbacks: custom_exp2
-  - override /trainer: gpu
+    - override /data: fsd50k
+    - override /model: diffunet_complex
+    - override /callbacks: custom_exp2
+    - override /trainer: gpu
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
 tags: ["fsd50k", "diffunet_complex", "unconditional"]
-num_classes : 10
+num_classes: 0 #BUG: Not sure if this is referencing the same classes as the net param
 audio_len: 128
 audio_frequency: 256
 seed: 42
 
 trainer:
-  accelerator: gpu
-  devices: 1
-  num_nodes: 1
-  sync_batchnorm: True
-  max_steps: 100_000
-  val_check_interval: 1
-  num_sanity_val_steps: 1
+    accelerator: gpu
+    devices: 1
+    num_nodes: 1
+    sync_batchnorm: True
+    max_steps: 100_000
+    val_check_interval: 5000
+    num_sanity_val_steps: 1
 
 model:
-  spec_abs_exponent: 0.2
-  spec_factor: 0.6
-  use_ema: True
-  use_phema: False
-  audio_sample_rate: 16000
-  generated_frame_length: ${audio_len}
-  generated_frequency: ${audio_frequency}
-  generated_sample_class: ${num_classes}
-  n_fft: 510
-  hop_length: 128
-  optimizer:
-    lr: 4e-5
-  net:
-    _target_: src.models.backbones.unet2d.UNet2dBase
-    dim: 128
-    dim_mults: [1, 2, 2, 2]
-    channels: 2
-    num_resnet_blocks: 2
-    resnet_groups: 8
-    layer_attns: [False, False, True, True]
-    layer_cross_attns: [False, False, True, True]
-    attn_heads: 2
-    ff_mult: 2.
-    memory_efficient: True
-  diffusion:
-    sigma_data : 0.2
-    dynamic_threshold : 0.0
-  noise_distribution:
-    mean : -1.2
-    std : 1.2
-  sampler:
-    rho: 1.0
-    num_steps: 50
-    cond_scale: 1.0
-  noise_scheduler:
-    sigma_min : 0.002
-    sigma_max : 80.0 
-    rho : 7.0
-    num_steps : 50
+    spec_abs_exponent: 0.2
+    spec_factor: 0.6
+    use_ema: True
+    use_phema: False
+    audio_sample_rate: 16000
+    generated_frame_length: ${audio_len}
+    generated_frequency: ${audio_frequency}
+    generated_sample_class: ${num_classes}
+    n_fft: 510
+    hop_length: 128
+    optimizer:
+        lr: 4e-5
+    net:
+        _target_: src.models.backbones.unet2d.UNet2dBase
+        num_classes: 0 #NOTE: We add num_classes here and skip the conditioning logic completely
+        dim: 128
+        dim_mults: [1, 2, 2, 2]
+        channels: 2
+        num_resnet_blocks: 2
+        resnet_groups: 8
+        layer_attns: [False, False, True, True]
+        layer_cross_attns: [False, False, True, True]
+        attn_heads: 2
+        ff_mult: 2.
+        memory_efficient: True
+    diffusion:
+        sigma_data: 0.2
+        dynamic_threshold: 0.0
+    noise_distribution:
+        mean: -1.2
+        std: 1.2
+    sampler:
+        rho: 1.0
+        num_steps: 50
+        cond_scale: 1.0
+    noise_scheduler:
+        sigma_min: 0.002
+        sigma_max: 80.0
+        rho: 7.0
+        num_steps: 50
 
 data:
-  batch_size: 16
+    batch_size: 16
 
 logger:
-  wandb:
-    tags: ${tags}
-    group: "diffaudio-sc09-complex"
+    wandb:
+        tags: ${tags}
 
 callbacks:
-  model_checkpoint:
-    dirpath: ${paths.output_dir}/checkpoints
-    filename: "epoch_{epoch:03d}"
-    every_n_epochs: 50
-    monitor: "val/loss"
-    save_last: True
+    model_checkpoint:
+        dirpath: ${paths.output_dir}/checkpoints
+        filename: "epoch_{epoch:03d}"
+        every_n_epochs: 50
+        monitor: "val/loss"
+        save_last: True
