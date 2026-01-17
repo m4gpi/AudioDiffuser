@@ -130,13 +130,10 @@ class FSD50KDataModule(LightningDataModule):
             yield from dl
 
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(
-            dataset=self.val,
-            batch_size=self.hparams.batch_size,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            shuffle=False,
-        )
+        #NOTE: Always eeturn ANY dataloader. Lightning just needs to see it exists
+        dummy_dataset = torch.utils.data.TensorDataset(torch.zeros(1))
+        val_dl = torch.utils.data.DataLoader(dummy_dataset, batch_size=1)
+        return val_dl
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(
