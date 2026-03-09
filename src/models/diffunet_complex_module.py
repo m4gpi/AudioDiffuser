@@ -105,7 +105,9 @@ class DiffUnetComplexModule(LightningModule):
         # predict noise
         audio = x.to(next(self.net.parameters()).dtype)
         audio_spec = torch.stft(audio, window=self.window.to(self.device), 
-                                normalized=True, return_complex=True, **self.stft_args)[:, :, :-1] # FIXME
+                                #BUG: [:, :, :-1] is hard coded in and needs to be handled more
+                                #BUG: intelligently.
+                                normalized=True, return_complex=True, **self.stft_args)[:, :, :-1] 
 
         # Convert real and imaginary parts of x into two channel dimensions
         audio_spec = spec_fwd(audio_spec, spec_abs_exponent=self.spec_abs_exponent, 
@@ -182,37 +184,48 @@ class DiffUnetComplexModule(LightningModule):
 
     @torch.no_grad()
     def validation_step(self, batch: Any, batch_idx: int):
-
-        loss = self.model_step(batch)
+        print("DOOOOING THE VAL STEP MOFO!")
+        # loss = self.model_step(batch)
+        loss = 1
 
         # update and log metrics
         self.val_loss(loss)
-        self.log("val/loss", self.val_loss, on_step=False, 
-                 on_epoch=True, prog_bar=True, sync_dist=True)
-        return {"loss": loss}
+        self.log("val/loss", self.val_loss, on_step=True, 
+                 on_epoch=False, prog_bar=True, sync_dist=True)
+
+        audio_save_dir = os.path.join(self.logger.save_dir, 'samples')
+        os.makedirs(audio_save_dir, exist_ok=True)
+        for sample_idx in range(5):
+            # generate unconditional audio samples
+            initial_noise = torch.randn((1, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
+            audio_sample = self.synthesize_from_noise(initial_noise, 0)
+            audio_path = os.path.join(audio_save_dir, 'val_' + str(self.global_step) + '_' + str(sample_idx) + '.wav')
+            torchaudio.save(audio_path, audio_sample, self.audio_sample_rate)
+
+        return {"loss": 1}
 
     @torch.no_grad()
     def on_validation_epoch_end(self):
+        # self.val_loss_best(self.val_loss.compute())  # update best so far val acc
+        # # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
+        # # otherwise metric would be reset by lightning after each epoch
+        # self.log("val/loss_best", self.val_loss_best.compute(), prog_bar=True, sync_dist=True)
+        # target_classes = list(range(self.generated_sample_class)) if self.generated_sample_class > 1 else [0]
 
-        self.val_loss_best(self.val_loss.compute())  # update best so far val acc
-        # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
-        # otherwise metric would be reset by lightning after each epoch
-        self.log("val/loss_best", self.val_loss_best.compute(), prog_bar=True, sync_dist=True)
-        target_classes = list(range(self.generated_sample_class)) if self.generated_sample_class > 1 else [0]
+        # with torch.no_grad():
+        #     target_class = torch.from_numpy(np.random.choice(target_classes, 1).astype(int)).to(self.device)
 
-        with torch.no_grad():
-            target_class = torch.from_numpy(np.random.choice(target_classes, 1).astype(int)).to(self.device)
+        #     # input data
+        #     initial_noise = torch.randn((1, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
 
-            # input data
-            initial_noise = torch.randn((1, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
+        #     audio_sample = self.synthesize_from_noise(initial_noise, target_class)
 
-            audio_sample = self.synthesize_from_noise(initial_noise, target_class)
-
-        if self.trainer.is_global_zero:
-            audio_save_dir = os.path.join(self.logger.save_dir, 'val_audio')
-            os.makedirs(audio_save_dir, exist_ok=True)
-            audio_path = os.path.join(audio_save_dir, 'val_' + str(target_class[0].item()) + '_' + str(self.global_step) + '.wav')
-            torchaudio.save(audio_path, audio_sample, self.audio_sample_rate)
+        # if self.trainer.is_global_zero:
+        #     audio_save_dir = os.path.join(self.logger.save_dir, 'val_audio')
+        #     os.makedirs(audio_save_dir, exist_ok=True)
+        #     audio_path = os.path.join(audio_save_dir, 'val_' + str(target_class[0].item()) + '_' + str(self.global_step) + '.wav')
+        #     torchaudio.save(audio_path, audio_sample, self.audio_sample_rate)
+        pass
 
     def test_step(self, batch: Any, batch_idx: int):
         # loss = self.model_step(batch)
@@ -226,41 +239,42 @@ class DiffUnetComplexModule(LightningModule):
 
     def on_test_epoch_end(self):
 
-        test_batch = self.trainer.datamodule.batch_size # 8 #self.trainer.batch_size
-        audio_dur = 1
+        # test_batch = self.trainer.datamodule.batch_size # 8 #self.trainer.batch_size
+        # audio_dur = 1
 
-        iteration = self.total_test_samples // test_batch
-        test_sample_folder = os.path.join(self.logger.save_dir, 'test_samples')
+        # iteration = self.total_test_samples // test_batch
+        # test_sample_folder = os.path.join(self.logger.save_dir, 'test_samples')
 
-        # override neural network weights with EMA
-        if self.ema_ckpt_path is not None:
-            print('Loading EMA weights....................')
-            with open(self.ema_ckpt_path, 'rb') as f:
-                self.net = pickle.load(f).to(self.dtype).to(self.device)
+        # # override neural network weights with EMA
+        # if self.ema_ckpt_path is not None:
+        #     print('Loading EMA weights....................')
+        #     with open(self.ema_ckpt_path, 'rb') as f:
+        #         self.net = pickle.load(f).to(self.dtype).to(self.device)
 
-        print('Generating test samples....................')
+        # print('Generating test samples....................')
 
-        os.makedirs(test_sample_folder, exist_ok=True)
+        # os.makedirs(test_sample_folder, exist_ok=True)
 
-        with torch.no_grad():
+        # with torch.no_grad():
 
-            for i in tqdm(range(iteration)):
+        #     for i in tqdm(range(iteration)):
 
-                if self.generated_sample_class > 1:
-                    target_class = torch.from_numpy((np.arange(test_batch) % self.generated_sample_class).astype(int)).to(self.device)
-                else:
-                    target_class = torch.from_numpy(0*np.ones(test_batch).astype(int)).to(self.device)
+        #         if self.generated_sample_class > 1:
+        #             target_class = torch.from_numpy((np.arange(test_batch) % self.generated_sample_class).astype(int)).to(self.device)
+        #         else:
+        #             target_class = torch.from_numpy(0*np.ones(test_batch).astype(int)).to(self.device)
 
-                # input data
-                initial_noise = torch.randn((test_batch, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
+        #         # input data
+        #         initial_noise = torch.randn((test_batch, 2, self.n_fft//2+1, self.generated_frame_length), device=self.device)
 
-                audio_samples = self.synthesize_from_noise(initial_noise, target_class)
+        #         audio_samples = self.synthesize_from_noise(initial_noise, target_class)
 
-                for j in range(audio_samples.shape[0]):
-                    audio_filename = 'test_'+str(target_class[j].item())+'_'+str(i*test_batch+j)+'.wav'
-                    audio_path = os.path.join(test_sample_folder, audio_filename)
-                    torchaudio.save(audio_path, audio_samples[j, :int(audio_dur*self.audio_sample_rate)].unsqueeze(0), 
-                                    self.audio_sample_rate, bits_per_sample=16)
+        #         for j in range(audio_samples.shape[0]):
+        #             audio_filename = 'test_'+str(target_class[j].item())+'_'+str(i*test_batch+j)+'.wav'
+        #             audio_path = os.path.join(test_sample_folder, audio_filename)
+        #             torchaudio.save(audio_path, audio_samples[j, :int(audio_dur*self.audio_sample_rate)].unsqueeze(0), 
+        #                             self.audio_sample_rate, bits_per_sample=16)
+        pass
 
     def configure_optimizers(self):
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
